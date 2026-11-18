@@ -1,0 +1,11 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    { "name": "자가 점검", "type": "debugpy", "request": "launch", "module": "indexbeater", "args": ["check"], "console": "integratedTerminal" },
+    { "name": "STEP1 수집 (30종목 시험)", "type": "debugpy", "request": "launch", "module": "indexbeater", "args": ["collect", "--limit", "30"], "console": "integratedTerminal" },
+    { "name": "STEP1 교차 검증", "type": "debugpy", "request": "launch", "module": "indexbeater", "args": ["crosscheck"], "console": "integratedTerminal" },
+    { "name": "STEP2 전처리", "type": "debugpy", "request": "launch", "module": "indexbeater", "args": ["preprocess"], "console": "integratedTerminal" },
+    { "name": "STEP3 신호 최적화 (상위 300종목)", "type": "debugpy", "request": "launch", "module": "indexbeater", "args": ["optimize", "--codes", "300"], "console": "integratedTerminal" },
+    { "name": "현재 파일", "type": "debugpy", "request": "launch", "program": "${file}", "cwd": "${workspaceFolder}", "console": "integratedTerminal" }
+  ]
+}

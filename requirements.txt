@@ -1,0 +1,17 @@
+# pip install -r requirements.txt   (또는 pip install -e ".[data,dev]")
+pandas>=2.1
+numpy>=1.26
+pyarrow>=14
+scipy>=1.11
+scikit-learn>=1.3
+statsmodels>=0.14
+matplotlib>=3.8
+seaborn>=0.13
+finance-datareader>=0.9.90
+yfinance>=0.2.40
+requests>=2.31
+beautifulsoup4>=4.12
+pytest>=8
+ruff>=0.5
+ipykernel
+# 딥러닝(STEP 5, 선택): pip install "tensorflow>=2.15,<2.20"  (Python 3.10~3.12)
