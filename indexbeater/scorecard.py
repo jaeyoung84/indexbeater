@@ -43,25 +43,27 @@ FINGERPRINT_FILES = ("engine.py", "signals.py", "exits.py", "indicators.py", "da
 #   교과서 표준값(지표를 만든 사람이 쓴 값·널리 쓰는 값)이 있는 축은 그 값.
 #   교과서 값이 없는 축만 이전 규칙: 부록 A 예시값, 없으면 그리드 가운데 값(짝수 개면 작은 쪽). ※ 표시.
 #   모두 그리드 안의 값이다 (그리드 밖이면 default_index 가 멈춘다).
+# 11/24 팀장 보완: 근거가 약하던 7개 축을 논문·대표 자료로 다시 확인했다 (회의기록 "기본값 근거 확인").
+#   바뀐 것 3개: 거래량 돌파 m 3→2, OBV 10→20, 캔들 추세 5→10. 나머지 4개는 값 그대로, 근거만 보탬.
 DEFAULT_PARAMS = {
-    "ma_cross": {"short": 5, "long": 20},              # 한국 HTS·교재의 단기 골든크로스 5·20 (50·200 은 그리드 밖)
+    "ma_cross": {"short": 5, "long": 20},              # 기재부 시사경제용어사전: 단기 골든크로스 = 5일선이 20일선 돌파 (50·200 은 그리드 밖)
     "alignment": {"periods": (5, 20, 60)},             # 정배열 5·20·60 (부록 A 예시와 같음)
     "macd": {"fast": 12, "slow": 26, "signal": 9},     # 아펠(Appel) 12·26·9
     "ichimoku": {"conv": 9, "base": 26},               # 호소다 9·26
-    "adx_di": {"period": 14, "adx_min": 25},           # 와일더(Wilder) 14, 추세 기준 25
+    "adx_di": {"period": 14, "adx_min": 25},           # 와일더(Wilder) 14, 추세 기준 25 (와일더 규칙: 25 위 = 추세, 20 아래 = 추세 없음)
     "sar": {"step": 0.02, "max_step": 0.2},            # 와일더 0.02·0.2
     "rsi": {"period": 14, "low": 30},                  # 와일더 14·30
     "stochastic": {"k": 14, "d": 3, "low": 20, "high": 80},   # 레인(Lane) 14·3, 20·80
-    "disparity": {"ma": 20, "thr": 0.95},              # 20일 이격도 95% (부록 A 예시)
-    "cci": {"period": 20},                             # 램버트(Lambert) 20
+    "disparity": {"ma": 20, "thr": 0.95},              # 20일 이격도 95% (부록 A 예시, 키움증권 지표 안내: 95% 밑돌면 매수)
+    "cci": {"period": 20},                             # 램버트(Lambert, 1980) 20 — 주기의 1/3, 보통 쓰는 값
     "williams_r": {"period": 14},                      # 윌리엄스 14
     "bollinger": {"period": 20, "k": 2.0},             # 볼린저 20·2
     "squeeze": {"period": 20, "lookback": 120},        # 볼린저: 밴드폭이 6개월(약 120거래일) 최저
     "donchian": {"n": 20},                             # 돈치안 4주(20일) 규칙
     "vol_breakout": {"k": 0.5},                        # 래리 윌리엄스 k 0.5
-    "volume_breakout": {"n": 60, "m": 3},              # ※ 교과서 값 없음 → 그리드 가운데
-    "obv": {"ma": 10},                                 # ※ 교과서 값 없음 → 그리드 가운데(작은 쪽)
-    "candle": {"trend": 5, "tail_ratio": 2},           # 꼬리 ≥ 몸통 2배 (닐슨 Nison). trend ※ 가운데(작은 쪽)
+    "volume_breakout": {"n": 60, "m": 2},              # n: 터틀 시스템 2 의 55일 돌파 → 가장 가까운 60. m: 오닐 "평균보다 40~50% 많은 거래" → 가장 가까운 2
+    "obv": {"ma": 20},                                 # 그래빌 원래 방식엔 평균선 없음 → 바차트(Barchart) OBV 평균선 기본 20
+    "candle": {"trend": 10, "tail_ratio": 2},          # 꼬리 ≥ 몸통 2배 (니슨 Nison). 추세 10: Marshall·Young·Rose(2006) 기본 = 10일 지수평균으로 앞선 추세
 }
 
 
