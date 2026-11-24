@@ -1,15 +1,16 @@
-"""STEP 3 신호 18개 단독 점수표 — 4명이 나눠 동시에 돌리고, 지문을 확인해 합친다 (기준 5.3·5.5·5.17).
+"""STEP 3 신호 18개 단독 점수표 — 한 사람이 18개를 한 번에 돌리고, 지문을 확인해 합친다 (기준 5.3·5.5·5.17·5.18).
 
 계산은 scorecard.py 에 있다. 이 파일은 '누가 무엇을 돌리나'와 '돌린 결과 합치기'만 맡는다.
 엔진(engine.py·signals.py·exits.py·indicators.py·data_io.py·config.py)은 고치지 않는다.
 지금 고정한 엔진은 v2 (11/24: v1 의 '시가 0 매수' 결함을 고침 — 회의기록.md). v1 기준 파일은 지우지 않고 남긴다.
 
-실행 (11/24 팀장 결정 D6 — 회의기록.md)
-  python -m indexbeater optimize --part 1        # 1~4: 아래 PARTS 표의 내 몫만 돌린다
-  python -m indexbeater optimize --signals rsi   # 신호 이름(또는 번호 1~18)을 직접 줄 때
-  python -m indexbeater optimize --merge         # 18개가 다 모이면 한 명이 합친다
-  python -m indexbeater optimize --list          # 나눈 표만 보여 준다
-  python -m indexbeater optimize --all --out 폴더 # 18개 전부를 한 컴퓨터에서 (재현 확인용)
+실행 (11/24 팀장 결정 'D6 취소' — 회의기록.md, 계획서 §7 "사람별로 나누지 않는다" 그대로)
+  python -m indexbeater optimize --all           # 기본: 18개 전부를 한 컴퓨터에서 한 번에 (약 10분)
+  python -m indexbeater optimize --merge         # 그다음 18개 묶음을 합친다
+  python -m indexbeater optimize --signals rsi   # 점검용: 신호 이름(또는 번호 1~18)을 직접 줄 때
+  python -m indexbeater optimize --all --out 폴더 # 재현 확인용: 다른 폴더에 한 번 더 돌린다
+  python -m indexbeater optimize --part 1        # (취소된 D6) PARTS 표의 몫만 돌린다 — 쓰지 않는다, 기록용으로 남김
+  python -m indexbeater optimize --list          # (취소된 D6) 나눈 표만 보여 준다
   python -m indexbeater optimize --compare 폴더A 폴더B   # 두 결과가 똑같은지 표마다 비교
 
   같은 엔진·같은 데이터·같은 프로그램 판이면 결과는 소수점까지 똑같아야 한다 (엔진에 무작위가 없고,
@@ -43,7 +44,8 @@ ENGINE_VERSION = "v2"
 REFERENCE = C.RESULTS / f"engine_{ENGINE_VERSION}_reference.csv"   # 노트북 04 10번이 처음 한 번 만든다
 SIGNAL_ORDER = list(S.SIGNALS)                 # 1~18 번호 = 계획서 부록 A 순서
 
-# 4명 나누기 (일의 양 = 세트 수·신호 수로 맞춤. 결과와 상관없이 정함 — 회의기록 11/24 D6)
+# (취소된 D6) 4명 나누기 — 11/24 같은 날 취소, 18개는 한 사람이 --all 로 돌린다. 표는 기록·점검용으로만 남긴다
+# (일의 양 = 세트 수·신호 수로 맞춤. 결과와 상관없이 정함 — 회의기록 11/24 D6)
 PARTS = {
     1: ("송재영", ["vol_breakout", "candle", "obv", "squeeze", "sar"]),
     2: ("김동겸", ["bollinger", "macd", "alignment", "donchian", "ichimoku"]),
@@ -311,13 +313,13 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="python -m indexbeater optimize", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     g = ap.add_mutually_exclusive_group(required=True)
-    g.add_argument("--part", type=int, choices=sorted(PARTS), help="내 몫 번호 (1~4)")
+    g.add_argument("--part", type=int, choices=sorted(PARTS), help="(취소된 D6, 쓰지 않음) 몫 번호 1~4")
     g.add_argument("--signals", help="신호 이름 또는 번호, 쉼표로 (예: rsi,bollinger 또는 7,12)")
-    g.add_argument("--all", action="store_true", help="18개 전부를 한 컴퓨터에서 돌린다 (재현 확인용)")
+    g.add_argument("--all", action="store_true", help="18개 전부를 한 컴퓨터에서 한 번에 돌린다 (기본 실행)")
     g.add_argument("--merge", action="store_true", help="18개 결과 묶음 합치기")
     g.add_argument("--compare", nargs=2, type=Path, metavar=("폴더A", "폴더B"),
-                   help="두 결과 묶음 폴더가 같은지 비교 (예: 나눠 돌린 것 vs 한 번에 돌린 것)")
-    g.add_argument("--list", action="store_true", help="나눈 표 보기")
+                   help="두 결과 묶음 폴더가 같은지 비교 (예: 처음 돌린 것 vs 한 번 더 돌린 것)")
+    g.add_argument("--list", action="store_true", help="(취소된 D6) 나눈 표 보기")
     ap.add_argument("--out", type=Path, default=None, help="결과 묶음 폴더 (기본 results/scorecard_parts)")
     ap.add_argument("--no-portfolio", action="store_true", help="포트폴리오 건너뛰기 (점검용)")
     a = ap.parse_args(argv)
