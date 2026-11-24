@@ -5,7 +5,7 @@
 지금 고정한 엔진은 v2 (11/24: v1 의 '시가 0 매수' 결함을 고침 — 회의기록.md). v1 기준 파일은 지우지 않고 남긴다.
 
 실행 (11/24 팀장 결정 'D6 취소' — 회의기록.md, 계획서 §7 "사람별로 나누지 않는다" 그대로)
-  python -m indexbeater optimize --all           # 기본: 18개 전부를 한 컴퓨터에서 한 번에 (약 10분)
+  python -m indexbeater optimize --all --who 송재영   # 기본: 18개 전부를 한 컴퓨터에서 한 번에 (약 10분)
   python -m indexbeater optimize --merge         # 그다음 18개 묶음을 합친다
   python -m indexbeater optimize --signals rsi   # 점검용: 신호 이름(또는 번호 1~18)을 직접 줄 때
   python -m indexbeater optimize --all --out 폴더 # 재현 확인용: 다른 폴더에 한 번 더 돌린다
@@ -16,6 +16,7 @@
   같은 엔진·같은 데이터·같은 프로그램 판이면 결과는 소수점까지 똑같아야 한다 (엔진에 무작위가 없고,
   순서가 같은 값이면 종목코드 순으로 정한다). 다르면 → 지문·판부터 보고, 둘 다 같은데 다르면 코드 결함.
 
+  --who 이름       결과 묶음 meta 의 '돌린사람' 칸에 적을 이름 (11/24 추가. 안 주면 빈칸 — --part 는 PARTS 표 이름)
   --out 폴더       결과 묶음을 다른 폴더에 쓴다 (기본 results/scorecard_parts)
   --no-portfolio   포트폴리오를 건너뛴다 (점검용. 합치기에서는 거부된다)
 
@@ -156,8 +157,17 @@ def run(signals: list[str], out_dir: Path, portfolio: bool = True, who: str = ""
                 "행수": {key: len(df) for key, df in tables.items()}}
         d = SC.write_part(name, tables, meta, out_dir)
         print(f"  저장: {d}")
-    print(f"끝 ({time.time() - t0:.0f}초). 결과 묶음 폴더 {out_dir} 를 공유 드라이브에 올려 주세요.")
+    print(f"끝 ({time.time() - t0:.0f}초). 결과 묶음 폴더: {out_dir}")
+    print(next_step_message(out_dir))
     return 0
+
+
+def next_step_message(out_dir: Path) -> str:
+    """돌리기가 끝난 뒤 안내 (11/24 D6 취소: 나눠 돌리지 않으므로 '드라이브에 올리기' 대신 합치기를 안내)."""
+    from indexbeater.scorecard import PART_DIR
+    if Path(out_dir).resolve() == Path(PART_DIR).resolve():
+        return "다음: python -m indexbeater optimize --merge"
+    return f"다른 폴더에 돌렸습니다. 비교: python -m indexbeater optimize --compare {PART_DIR} {out_dir}"
 
 
 # ---------------------------------------------------------------- 합치기
@@ -320,6 +330,7 @@ def main(argv=None):
     g.add_argument("--compare", nargs=2, type=Path, metavar=("폴더A", "폴더B"),
                    help="두 결과 묶음 폴더가 같은지 비교 (예: 처음 돌린 것 vs 한 번 더 돌린 것)")
     g.add_argument("--list", action="store_true", help="(취소된 D6) 나눈 표 보기")
+    ap.add_argument("--who", default="", help="돌린사람 이름 (meta 에 적힘, 예: 송재영)")
     ap.add_argument("--out", type=Path, default=None, help="결과 묶음 폴더 (기본 results/scorecard_parts)")
     ap.add_argument("--no-portfolio", action="store_true", help="포트폴리오 건너뛰기 (점검용)")
     a = ap.parse_args(argv)
@@ -340,9 +351,11 @@ def main(argv=None):
         who, sigs = PARTS[a.part]
         print(f"{a.part}번 몫 ({who}): {', '.join(sigs)}")
     elif a.all:
-        who, sigs = "", list(SIGNAL_ORDER)
+        who, sigs = a.who, list(SIGNAL_ORDER)
     else:
-        who, sigs = "", resolve_signals(a.signals)
+        who, sigs = a.who, resolve_signals(a.signals)
+    if not who:
+        print("주의: --who 를 주지 않아 '돌린사람' 칸이 빈칸으로 남습니다 (예: --who 송재영)")
     return run(sigs, part_dir, portfolio=not a.no_portfolio, who=who)
 
 

@@ -14,6 +14,8 @@
     python -m pytest tests/check_period.py
 
 고치기 전 실제 건수 (노트북 05 2-2): 늦게 판 학습 매매 최대 0.02%. 지금은 학습에서 빠진다.
+
+맨 끝 덧붙임 2개(11/24): optimize 의 --who(돌린사람)·끝 안내 문구 — 기간과 상관없지만 같은 이유로 여기에 둔다.
 """
 import inspect
 
@@ -220,3 +222,22 @@ def test_late_training_trades_do_not_see_year_prices(halted_long, base_run):
         a = _upto(base[n]["selection"], YEAR).drop(columns="불안정")
         b = _upto(new[n]["selection"], YEAR).drop(columns="불안정")
         pd.testing.assert_frame_equal(a, b)
+
+
+# ---------------------------------------------------------------- 덧붙임: 실행 안내 (기간과는 상관없음, 11/24)
+# 기본 pytest 수(130)를 바꾸지 않으려고 여기에 둔다 (위 설명 참고).
+def test_who_is_written_to_run(monkeypatch):
+    """--all --who 이름 → run() 에 그 이름이 간다 (meta '돌린사람' 칸). 안 주면 빈칸."""
+    got = {}
+    monkeypatch.setattr(O, "run", lambda sigs, out_dir, portfolio=True, who="": got.update(sigs=sigs, who=who) or 0)
+    assert O.main(["--all", "--who", "송재영"]) == 0
+    assert got == {"sigs": O.SIGNAL_ORDER, "who": "송재영"}
+    O.main(["--signals", "rsi"])
+    assert got == {"sigs": ["rsi"], "who": ""}
+
+
+def test_next_step_message_points_to_merge(tmp_path):
+    """나눠 돌리지 않으므로(D6 취소) 끝 안내는 '드라이브에 올리기'가 아니라 합치기다."""
+    msg = O.next_step_message(SC.PART_DIR)
+    assert "--merge" in msg and "드라이브" not in msg
+    assert "--compare" in O.next_step_message(tmp_path)
