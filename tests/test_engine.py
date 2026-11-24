@@ -93,6 +93,43 @@ def test_halt_on_buy_day_is_no_buy():
     assert simulate_trades(sig(d, (2, "000010")), d, ExitRule(hold=5)).iloc[0].status == "매수불가"
 
 
+def test_zero_open_day_is_no_buy_v2():
+    # 엔진 v2: 시가·고가·저가 0, 거래량 > 0 인 날(자료 결함)은 사지 않는다. v1 은 0원에 사서 수익이 무한대였다
+    days = [flat(100)] * 20
+    days[3] = bar(0, 0, 0, 100)
+    d = wide({"000010": days})
+    r = simulate_trades(sig(d, (2, "000010")), d, ExitRule(hold=5)).iloc[0]
+    assert r.status == "매수불가" and np.isnan(r.buy_px)
+
+
+def test_zero_open_day_is_not_sold_on_v2():
+    # 매도 예정일이 시가 0 인 날 → 그날은 못 팔고 다음 날 시가에 판다
+    days = [flat(100)] * 20
+    days[8] = bar(0, 0, 0, 100)
+    d = wide({"000010": days})
+    r = simulate_trades(sig(d, (2, "000010")), d, ExitRule(hold=5)).iloc[0]
+    assert (r.status, r.s_idx, r.delay, r.sell_px) == ("체결", 9, 1, 100)
+    assert np.isfinite(r.ret_gross)
+
+
+def test_zero_low_on_zero_open_day_does_not_trigger_stop_v2():
+    # 시가 0 인 날의 저가 0 은 진짜 가격이 아니다 → 손절로 보지 않고 S3 로 판다
+    days = [flat(100)] * 20
+    days[5] = bar(0, 0, 0, 100)
+    d = wide({"000010": days})
+    r = simulate_trades(sig(d, (2, "000010")), d, ExitRule(hold=5, stop=0.05, take=0.10)).iloc[0]
+    assert (r.reason, r.s_idx, r.sell_px) == ("S3", 8, 100)
+
+
+def test_portfolio_skips_zero_open_buy_v2():
+    days = [flat(100)] * 20
+    days[3] = bar(0, 0, 0, 100)
+    d = wide({"000010": days})
+    daily, log = run_portfolio(sig(d, (2, "000010")).astype(int), d, ExitRule(hold=5), "KOSPI")
+    assert np.isfinite(daily["equity"]).all()
+    assert (log["shares"] == 0).all()                        # 후보였지만 매수불가 → 0주
+
+
 def test_sell_delayed_by_halt_and_limit_down():
     days = [flat(100)] * 20
     days[8] = flat(100, v=0)                                 # 원래 매도일: 거래정지

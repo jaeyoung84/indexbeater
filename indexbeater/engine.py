@@ -15,6 +15,7 @@
 - 갭은 수정 시가 ÷ 수정 종가로 잰다
 - 하한가 근처(시가가 전날 종가 대비 −29%, 2015.6.15 이전 −14% 이하)인 날은 시가에 못 판다 (상한가 갭의 반대쪽)
 - 거래정지일(거래량 0)도 팔 수 없다. 팔 수 있는 첫 날 시가로 미루고 미룬 날 수를 delay 에 적는다
+- 시가가 0인 날(가격 없음, 거래량은 있음)은 거래정지일과 같이 사지도 팔지도 않는다 (엔진 v2, 11/24 발견 결함)
 - 팔기 전에 상장폐지되면 마지막 거래일 종가로 정산한다 (reason=상장폐지).
   거래정지 중에 폐지되면 정지 전 가격으로 정산되어 덜 잃은 것으로 나올 수 있으므로,
   성적표는 delisting_worst_case()(상장폐지 정산 = −100%)로도 한 번 더 계산한다 (11/20 결정 ③)
@@ -80,8 +81,14 @@ class _Market:
         prev_c = np.vstack([np.full((1, self.Cl.shape[1]), np.nan), self.Cl[:-1]])
         with np.errstate(invalid="ignore", divide="ignore"):
             down = (self.O / prev_c - 1) <= -self.thr[:, None] + FLOAT_EPS
-        # 팔 수 있는 날: 자료가 있고, 거래가 있었고(거래정지 아님), 하한가 근처 시가가 아님
-        self.traded = self.has & (np.nan_to_num(vol) > 0)      # 자료가 있고 거래정지가 아닌 날
+        # 가격이 있는 날 (엔진 v2, 11/24): 시가가 0보다 크다.
+        #   데이터에 '시가·고가·저가 = 0, 거래량 > 0' 인 칸이 53개 있다 (2012~2019, 40종목).
+        #   v1 은 그 날을 살 수 있는 날로 보고 0원에 사서 수익이 무한대가 되었다.
+        #   이런 날은 거래정지일처럼 사지도 팔지도 않고, 장중 손절 판정에도 쓰지 않는다.
+        self.priced = np.nan_to_num(self.O) > 0
+        # 살 수 있는 날: 자료가 있고, 거래가 있었고(거래정지 아님), 가격이 있다
+        # 팔 수 있는 날: 살 수 있는 날 중 하한가 근처 시가가 아닌 날
+        self.traded = self.has & (np.nan_to_num(vol) > 0) & self.priced
         self.sellable = self.traded & ~down
 
         # nxt[i, j] = i일 또는 그 뒤에서 j 종목을 팔 수 있는 첫 날 (없으면 n)
@@ -129,7 +136,8 @@ def _one_trade(m: _Market, t: int, j: int, rule: ExitRule) -> dict:
         if i >= s0 and ok:                        # 4A: 시가 매도(S3)가 장중 손절보다 먼저
             return _sold(rec, i, o, "S3", i - s0, True)
         if not ok:
-            if stop_px is not None and l <= stop_px:
+            # 가격이 없는 날(시가 0)의 저가 0 은 진짜 가격이 아니다 → 손절선에 닿은 것으로 보지 않는다 (v2)
+            if stop_px is not None and m.priced[i, j] and l <= stop_px:
                 pending = True
             continue
         if stop_px is not None and o <= stop_px:  # 시가부터 손절선 아래 → 시가에 판다
