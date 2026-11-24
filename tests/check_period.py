@@ -16,6 +16,8 @@
 고치기 전 실제 건수 (노트북 05 2-2): 늦게 판 학습 매매 최대 0.02%. 지금은 학습에서 빠진다.
 
 맨 끝 덧붙임 2개(11/24): optimize 의 --who(돌린사람)·끝 안내 문구 — 기간과 상관없지만 같은 이유로 여기에 둔다.
+맨 끝 덧붙임 4개(11/24): D4 벤치마크(분배금 반영 ETF) — 시험 구간 잠금·분배금 재투자·분할 멈춤·상장한 해 비움.
+맨 끝 덧붙임 3개(11/24): 코스닥 상장 전 대신 쓰는 지수(KQ11) — 잇는 날짜·빠진 거래일 멈춤·시험 구간 잠금.
 """
 import inspect
 
@@ -241,3 +243,93 @@ def test_next_step_message_points_to_merge(tmp_path):
     msg = O.next_step_message(SC.PART_DIR)
     assert "--merge" in msg and "드라이브" not in msg
     assert "--compare" in O.next_step_message(tmp_path)
+
+
+# ---------------------------------------------------------------- 덧붙임: D4 벤치마크 (11/24)
+# 배당(분배금) 반영 ETF 비교 지수. 기본 pytest 수(130)를 바꾸지 않으려고 여기에 둔다 (위 설명 참고).
+from indexbeater import benchmark as B  # noqa: E402
+
+
+def _etf(close, base):
+    d = pd.bdate_range("2016-04-25", periods=len(close))
+    return pd.DataFrame({"date": d, "code": "069500", "name": "KODEX 200", "close": close, "base_price": base})
+
+
+def test_benchmark_test_period_is_locked_before_reading():
+    # 없는 파일 이름을 줘도 '시험 구간' 오류가 먼저 난다 = 읽기 전에 막는다
+    with pytest.raises(ValueError, match="시험 구간"):
+        B.load_raw(end=C.TEST_START, path="없는파일.parquet")
+    with pytest.raises(ValueError, match="시험 구간"):
+        B.build(end="2020-06-30", path="없는파일.parquet")
+    assert inspect.signature(B.load_raw).parameters["end"].default == C.DESIGN_END
+
+
+def test_benchmark_distribution_is_reinvested():
+    """3일째 분배락: 전일 종가 100, 기준가 98 → 분배금 2. 종가 98 이면 가격은 −2% 지만 수익은 0."""
+    tr = B.total_return(_etf([100, 100, 98, 99], [np.nan, 100, 98, 98]))
+    assert tr["dist"].tolist() == [0, 0, 2, 0]
+    assert tr["ret_tr"].round(12).tolist() == [0, 0, 0, round(1 / 98, 12)]
+    assert tr["tr_index"].iloc[-1] == pytest.approx(100 * 99 / 98)
+    assert tr["price_index"].iloc[-1] == pytest.approx(99)
+
+
+def test_benchmark_stops_on_split_like_event():
+    """기준가가 전일 종가의 절반 = 분할 같은 다른 사건 → 분배금으로 넣지 않고 멈춘다."""
+    with pytest.raises(ValueError, match="분할"):
+        B.total_return(_etf([100, 100, 50], [np.nan, 100, 50]))
+    with pytest.raises(ValueError, match="다른 사건"):
+        B.total_return(_etf([100, 100, 103], [np.nan, 100, 102]))   # 기준가 > 전일 종가
+
+
+def test_benchmark_listing_year_is_blank():
+    """상장한 해(1년 전체가 아님)는 연간 수익을 비운다. 다음 해는 전년 마지막 종가부터 잰다."""
+    d = pd.to_datetime(["2015-10-01", "2015-12-30", "2016-06-30", "2016-12-29"])
+    raw = pd.DataFrame({"date": d, "code": "229200", "name": "KODEX 코스닥150",
+                        "close": [100.0, 110, 100, 121], "base_price": [np.nan, 100, 110, 100]})
+    y = B.yearly(B.total_return(raw)).set_index("year")
+    assert np.isnan(y.loc[2015, "수익률_분배포함"])
+    assert y.loc[2016, "수익률_가격만"] == pytest.approx(0.1)
+    assert y.loc[2016, "분배금_합"] == 0
+    assert (y["bench_market"] == "KOSDAQ").all()
+
+
+# 코스닥 상장 전 대신 쓰는 지수 (11/24 팀장 결정 1번: KQ11 로 채운다)
+def _two_etfs():
+    d = pd.bdate_range("2015-09-28", periods=5)                  # 229200 은 3일째(d[2]) 상장이라고 친다
+    k = pd.DataFrame({"date": d, "code": "069500", "name": "KODEX 200",
+                      "close": [100.0, 101, 102, 103, 104], "base_price": [np.nan, 100, 101, 102, 103]})
+    q = pd.DataFrame({"date": d[2:], "code": "229200", "name": "KODEX 코스닥150",
+                      "close": [10.0, 11, 11], "base_price": [np.nan, 10, 11]})
+    sub = pd.DataFrame({"date": d, "symbol": "KQ11", "close": [500.0, 510, 520.2, 0, 0]})   # 상장 뒤 값은 쓰면 안 된다
+    return d, B.total_return(pd.concat([k, q])), sub
+
+
+def test_benchmark_kosdaq_before_listing_uses_sub_index():
+    """상장 첫날까지는 KQ11 하루 수익률, 다음 날부터 229200. 상장 뒤 KQ11 값(0)은 쓰지 않는다."""
+    d, tr, sub = _two_etfs()
+    ms = B.market_series(tr, sub)
+    kq = ms[ms["market"] == "KOSDAQ"].set_index("date")
+    assert kq["ret"].round(12).tolist() == [0, 0.02, 0.02, 0.1, 0]
+    assert kq["source"].tolist() == ["KQ11 대신 (가격만)"] * 3 + ["229200 분배 포함"] * 2
+    assert kq["index"].iloc[-1] == pytest.approx(100 * 1.02 * 1.02 * 1.1)
+    ks = ms[ms["market"] == "KOSPI"]
+    assert ks["index"].iloc[-1] == pytest.approx(104) and (ks["source"] == "069500 분배 포함").all()
+    y = B.market_yearly(ms)
+    assert y["수익률"].isna().all()                                # 첫해(1년이 안 됨)는 비운다
+    assert y.loc[y["market"] == "KOSDAQ", "출처"].item() == "KQ11 대신 (가격만) + 229200 분배 포함"
+
+
+def test_benchmark_sub_index_missing_day_stops():
+    """KQ11 에 거래일이 하루 빠지면 조용히 건너뛰지 않고 멈춘다."""
+    d, tr, sub = _two_etfs()
+    with pytest.raises(ValueError, match="거래일"):
+        B.market_series(tr, sub.drop(index=1))
+
+
+def test_benchmark_sub_index_test_period_locked():
+    """대신 쓰는 지수도 2020년 이후는 읽기 전에·받기 전에 막는다 (없는 파일·인터넷 없이도 오류가 먼저)."""
+    with pytest.raises(ValueError, match="시험 구간"):
+        B.load_sub_index("없는파일.parquet", end=C.TEST_START)
+    with pytest.raises(ValueError, match="시험 구간"):
+        B.fetch_sub_index(out="없는파일.parquet", end="2020-01-02")
+    assert B.SUB_END < C.TEST_START

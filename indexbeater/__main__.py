@@ -5,6 +5,7 @@
   crosscheck   네이버 금융 교차 검증                           STEP 1
   preprocess   전처리                                         STEP 2
   optimize     매수 신호 최적화 (설계 구간만)                   STEP 3
+  benchmark    배당(분배금) 반영 ETF 비교 지수 (설계 구간만)     D4
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ import importlib
 import sys
 
 COMMANDS = {"check": "check", "collect": "collect", "crosscheck": "crosscheck_naver",
-            "preprocess": "preprocess", "optimize": "optimize"}
+            "preprocess": "preprocess", "optimize": "optimize", "benchmark": "benchmark"}
 
 
 def main(argv=None):
