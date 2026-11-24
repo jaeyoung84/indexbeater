@@ -169,17 +169,18 @@ class Context:
             self.base[h] = M.ControlBase(data, ExitRule(hold=h), self.m, self.cell)
             check_finite(self.base[h].gross, f"대조군 바탕 H={h}")
             log(f"  대조군 바탕 H={h}: 체결 {self.base[h].n_base_trades:,}건 ({time.time() - t0:.0f}초)")
-        self.cut_idx = {}
+        self.cut_idx, self.start_idx = {}, {}
         for y in SELECT_YEARS:
             before = np.nonzero(self.dates < pd.Timestamp(f"{y}-01-01"))[0]
             self.cut_idx[y] = int(before[-C.WF_CUT_OFFSET])      # 계획서 코드 cut = days[days < start][-21]
+            self.start_idx[y] = len(before)                      # Y년 첫 거래일 (2020 은 자료 밖 = len(dates))
         self.years = self.dates.year.to_numpy()
         self.oos_calendar = self.dates[(self.years >= C.WF_YEARS[0]) & (self.years <= C.WF_YEARS[-1])]
         self.full_calendar = self.dates[self.dates >= C.SIGNAL_START]
 
 
-def _trade_table(ctx: Context, entry: pd.DataFrame, hold: int) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """세트 하나 × H 하나: 체결 매매 표(대조군 붙임)와 상태 표."""
+def _trade_table(ctx: Context, entry: pd.DataFrame, hold: int) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    """세트 하나 × H 하나: 체결 매매 표(대조군 붙임), 상태 표, 검증 연도별 학습 매매 표."""
     tr = E.simulate_trades(entry, ctx.data, ExitRule(hold=hold), dedupe=True, _m=ctx.m)
     st = tr.loc[tr["status"].isin([E.FILLED, E.GAP_CANCEL, E.NO_BUY]), ["market", "t_idx", "status"]].copy()
     st["year"] = ctx.years[st["t_idx"].to_numpy(int)]
@@ -195,12 +196,30 @@ def _trade_table(ctx: Context, entry: pd.DataFrame, hold: int) -> tuple[pd.DataF
     out["gross_w"] = np.where(f["reason"].eq(E.DELIST).to_numpy(), -1.0, out["gross"])
     for worst, sfx in ((False, ""), (True, "_w")):
         mt = base.matched(sig_on, t, j, worst=worst)
+        if not worst:
+            mt0 = mt
         out[f"ctrl_gross{sfx}"] = mt["ctrl_gross"]
         for name in M.COSTS:
             out[f"ctrl_win{name}{sfx}"] = mt[f"ctrl_win{name}"]
     out["edge"] = out["gross"] - out["ctrl_gross"]
     out["edge_w"] = out["gross_w"] - out["ctrl_gross_w"]
-    return out, st
+    return out, st, _train_trades(ctx, base, sig_on, out, f["s_idx"].to_numpy(int), t, j, mt0)
+
+
+def _train_trades(ctx, base, sig_on, out, s, t, j, mt) -> dict[int, pd.DataFrame]:
+    """검증 연도 Y마다 학습 매매 = cut 까지의 신호 중 Y년 첫 거래일 시가까지 판 매매 (5.5, 11/24 팀장 결정).
+
+    거래정지로 매도가 늦어져 Y년 첫날 뒤에 판 매매는 Y년 가격을 보므로 뺀다. 대조군에서도 똑같이 뺀다.
+    """
+    res = {}
+    gross = out["gross"].to_numpy(float)
+    market = out["market"].to_numpy()
+    for y, ci in ctx.cut_idx.items():
+        w = (t <= ci) & (s <= ctx.start_idx[y])
+        sub = {kk: v[w] for kk, v in mt.items()}
+        ctrl = base.matched_train(sig_on, t[w], j[w], sub, ci, ctx.start_idx[y])
+        res[y] = pd.DataFrame({"market": market[w], "edge": gross[w] - ctrl})
+    return res
 
 
 def _edge_block(ft: pd.DataFrame, ctx: Context, calendar, sfx="") -> dict:
@@ -231,13 +250,12 @@ def _grid_rows(name, k, p, hold, ft, st, ctx) -> list[dict]:
     return rows
 
 
-def _train_rows(name, k, hold, ft, ctx) -> list[dict]:
+def _train_rows(name, k, hold, train, ctx) -> list[dict]:
     rows = []
-    v = ft[~np.isnan(ft["edge"].to_numpy())]
     for mk in C.UNIVERSE_MARKETS:
-        vm = v[v["market"] == mk]
         for y, ci in ctx.cut_idx.items():
-            tr = vm[vm["t_idx"] <= ci]
+            tr = train[y]
+            tr = tr[(tr["market"] == mk) & ~np.isnan(tr["edge"].to_numpy())]
             rows.append({"시장": mk, "신호": name, "세트": k, "H": hold, "검증연도": y,
                          "cut": ctx.dates[ci].date().isoformat(), "학습거래수": len(tr),
                          "학습Edge": float(tr["edge"].mean()) if len(tr) else np.nan})
@@ -305,10 +323,10 @@ def run_signal(name: str, ctx: Context, log=print, portfolio: bool = True) -> di
     grid, train, trades, status = [], [], {}, {}
     for k, p in enumerate(sets):
         for h in C.HOLDS:
-            ft, st = _trade_table(ctx, entries[k], h)
+            ft, st, tr = _trade_table(ctx, entries[k], h)
             trades[(k, h)], status[(k, h)] = ft, st
             grid += _grid_rows(name, k, p, h, ft, st, ctx)
-            train += _train_rows(name, k, h, ft, ctx)
+            train += _train_rows(name, k, h, tr, ctx)
         log(f"  {name} 세트 {k + 1}/{len(sets)} {p} ({time.time() - t0:.0f}초)")
     train_df = pd.DataFrame(train)
 

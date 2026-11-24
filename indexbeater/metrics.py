@@ -77,6 +77,9 @@ class ControlBase:
         self.gross[t, j] = f["ret_gross"].to_numpy(float)
         self.delist = np.zeros(shape, bool)
         self.delist[t, j] = f["reason"].eq(E.DELIST).to_numpy()
+        s = f["s_idx"].to_numpy(int)
+        late = s > t + 1 + rule.hold                   # 거래정지 등으로 정해진 날보다 늦게 판 매매만 따로 적어 둔다
+        self._late = (t[late], j[late], s[late])
         self.cell = cell
         self.n_cells = shape[0] * CELLS_PER_DAY
         self.n_base_trades = len(f)
@@ -117,6 +120,33 @@ class ControlBase:
                 w = tot[f"win{name}"][kk] - sub[f"win{name}"][kk]
                 out[f"ctrl_win{name}"] = np.where(has, w / n, np.nan)
         return out
+
+    def matched_train(self, sig_on: np.ndarray, t: np.ndarray, j: np.ndarray, mt: dict,
+                      cut: int, start: int) -> np.ndarray:
+        """학습용 짝 칸 대조군 평균 수익(비용 전) = matched 결과(mt)에서 'start 날 뒤에 판' 대조군 매매를 더 뺀 값.
+
+        mt    : 같은 (t, j) 의 matched(sig_on, t, j) 결과 (worst=False)
+        start : 검증 연도 첫 거래일. 학습 Edge 가 검증 연도의 가격을 보지 않게 한다 (11/24 팀장 결정).
+        정해진 날에 판 매매는 cut 규칙(21거래일) 때문에 늦어도 start 날 시가에 팔린다 → 늦게 판 매매만 보면 된다.
+        """
+        lt, lj, ls = self._late
+        w = (lt <= cut) & (ls > start)
+        lt, lj = lt[w], lj[w]
+        w = ~sig_on[lt, lj] & (self.cell[lt, lj] >= 0)       # 신호 종목은 matched 가 이미 뺐다
+        lt, lj = lt[w], lj[w]
+        if not len(lt):
+            return mt["ctrl_gross"]
+        lk = self.cell[lt, lj]
+        n_late = np.bincount(lk, minlength=self.n_cells).astype(float)
+        s_late = np.bincount(lk, weights=self.gross[lt, lj], minlength=self.n_cells)
+        k = self.cell[t, j]
+        kk = np.where(k >= 0, k, 0)
+        hit = (k >= 0) & (n_late[kk] > 0)
+        n_old = mt["ctrl_n"]
+        n = n_old - n_late[kk]
+        with np.errstate(invalid="ignore", divide="ignore"):
+            new = np.where(n > 0, (mt["ctrl_gross"] * n_old - s_late[kk]) / n, np.nan)
+        return np.where(hit, new, mt["ctrl_gross"])             # 늦게 판 매매가 없는 칸은 숫자 그대로
 
 
 # ---------------------------------------------------------------- 통계

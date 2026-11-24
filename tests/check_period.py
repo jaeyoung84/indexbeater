@@ -7,13 +7,13 @@
    기간은 config.py 에 있고 config.py 는 지문으로 고정돼 있어서, 기간을 바꾸면 optimize 가 실행을 거부한다.
 3. 연도마다 자르기(5.5): 검증 연도 Y의 파라미터는 cut(= Y년 첫 거래일 − 21거래일)까지의 신호로만 고른다.
    H 최대 20 이면 마지막 학습 매매는 Y년 첫 거래일 시가에 판다 → Y년 첫날 '다음' 가격은 쓰지 않는다.
+   거래정지로 매도가 늦어져 Y년 첫날 뒤에 판 학습 매매는 신호·대조군 양쪽에서 뺀다 (11/24 팀장 결정).
 
 이 파일은 기본 pytest 모음(test_*.py)에 넣지 않았다. 노트북 04 가 'pytest 통과 수 130'을 엔진 v2 기준값과
 비교하기 때문이다 (기준값 파일은 덮어쓰지 않는다). 노트북 05 의 2-2 칸이 이 파일을 따로 돌린다:
     python -m pytest tests/check_period.py
 
-알려진 예외 (노트북 05 2-2 에 실제 건수): 거래정지로 매도가 미뤄진 학습 매매는 Y년 안의 가격으로 판다.
-가짜 주가에서는 그런 매매가 결과를 바꾸지 않았다 (이 파일의 테스트가 통과).
+고치기 전 실제 건수 (노트북 05 2-2): 늦게 판 학습 매매 최대 0.02%. 지금은 학습에서 빠진다.
 """
 import inspect
 
@@ -23,9 +23,13 @@ import pytest
 
 from indexbeater import config as C
 from indexbeater import data_io
+from indexbeater import engine as E
 from indexbeater import lookahead as LA
+from indexbeater import metrics as M
 from indexbeater import optimize as O
 from indexbeater import scorecard as SC
+from indexbeater import signals as S
+from indexbeater.exits import ExitRule
 
 SIGNALS = ("ma_cross", "volume_breakout", "candle")   # 이동평균·거래량·캔들: 계산 방식이 서로 다른 3개
 YEAR = 2017                                           # 가운데 검증 연도 (앞뒤로 학습·검증이 다 있다)
@@ -149,3 +153,70 @@ def test_check_is_sensitive_on_year_start(synthetic_long, base_run):
     _, new = _run(_bend(synthetic_long, _year_start(ctx, YEAR) - pd.Timedelta(days=1)))
     changed = [n for n in SIGNALS if not _upto(base[n]["train"], YEAR).equals(_upto(new[n]["train"], YEAR))]
     assert changed
+
+
+# ---------------------------------------------------------------- 4. 거래정지로 늦게 판 학습 매매 (11/24 팀장 결정)
+def test_late_control_trade_is_left_out_by_hand():
+    """손 계산: 하루, 같은 칸(7) 종목 4개. 0번 = 신호 종목, 3번 = Y년 첫날(10) 뒤 50일에 판 대조군."""
+    b = M.ControlBase.__new__(M.ControlBase)
+    b.gross = np.array([[0.10, 0.20, 0.30, 0.60]])
+    b.delist = np.zeros(b.gross.shape, bool)
+    b.cell = np.array([[7, 7, 7, 7]], np.int64)
+    b.n_cells = M.CELLS_PER_DAY
+    b._tot = {w: b._sums(b.variant(w), np.ones(b.gross.shape, bool)) for w in (False, True)}
+    b._late = (np.array([0, 0]), np.array([0, 3]), np.array([50, 50]))   # 0번(신호 종목)도 늦게 팜 → 두 번 빼면 안 됨
+    sig_on = np.array([[True, False, False, False]])
+    t, j = np.array([0]), np.array([0])
+    mt = b.matched(sig_on, t, j)
+    assert mt["ctrl_gross"][0] == pytest.approx((0.2 + 0.3 + 0.6) / 3)       # 보통 대조군: 1·2·3번
+    assert b.matched_train(sig_on, t, j, mt, cut=0, start=10)[0] == pytest.approx(0.25)   # 학습: 3번도 뺌
+    assert b.matched_train(sig_on, t, j, mt, cut=0, start=60)[0] == mt["ctrl_gross"][0]   # 첫날 전에 팔았으면 그대로
+
+
+@pytest.fixture(scope="module")
+def halted_long(synthetic_long, base_run):
+    """종목 3개 중 1개를 YEAR년 첫날 10거래일 전 ~ 15거래일 뒤까지 거래정지로 바꾼 가짜 주가.
+
+    그 사이에 팔 차례였던 학습 매매는 정지가 풀린 뒤(= YEAR년 안) 팔린다.
+    """
+    ctx, _ = base_run
+    s = ctx.start_idx[YEAR]
+    d = synthetic_long.sort_values(["code", "date"]).reset_index(drop=True)
+    codes = sorted(d["code"].unique())[::3]
+    m = d["date"].between(ctx.dates[s - 10], ctx.dates[s + 15]) & d["code"].isin(codes)
+    prev = d[d["date"] == ctx.dates[s - 11]].set_index("code")["adj_close"]
+    px = d.loc[m, "code"].map(prev).to_numpy()
+    for c in ("adj_open", "adj_high", "adj_low", "open", "volume", "volume_s", "value"):
+        d.loc[m, c] = 0.0
+    d.loc[m, "adj_close"] = d.loc[m, "close"] = px
+    d.loc[m, "mktcap"] = px * 1e7
+    return d
+
+
+def test_halted_setup_really_has_late_trades(halted_long, base_run):
+    """준비가 제대로 됐는지: 신호 쪽·대조군 쪽 모두 'cut 전 신호 · YEAR년 첫날 뒤 매도' 매매가 있어야 한다."""
+    ctx0, _ = base_run
+    ci, s = ctx0.cut_idx[YEAR], ctx0.start_idx[YEAR]
+    data = data_io.to_wide(halted_long)
+    h = max(C.HOLDS)
+    sig_late = 0
+    for n in SIGNALS:
+        tr = E.simulate_trades(S.entry_signal(n, data, SC.param_sets(n)[0]), data, ExitRule(hold=h))
+        f = tr[tr["status"] == E.FILLED]
+        sig_late += int(((f["t_idx"] <= ci) & (f["s_idx"] > s)).sum())
+    assert sig_late > 0
+    ctx = SC.Context(data, log=lambda *a: None)
+    lt, _, ls = ctx.base[h]._late
+    assert ((lt <= ci) & (ls > s)).sum() > 0
+
+
+def test_late_training_trades_do_not_see_year_prices(halted_long, base_run):
+    """긴 거래정지가 있어도 YEAR년 첫날 뒤 가격을 마구 바꾸면 학습 Edge·고른 세트가 그대로여야 한다."""
+    ctx0, _ = base_run
+    _, base = _run(halted_long)
+    _, new = _run(_bend(halted_long, _year_start(ctx0, YEAR)))
+    for n in SIGNALS:
+        pd.testing.assert_frame_equal(_upto(base[n]["train"], YEAR), _upto(new[n]["train"], YEAR))
+        a = _upto(base[n]["selection"], YEAR).drop(columns="불안정")
+        b = _upto(new[n]["selection"], YEAR).drop(columns="불안정")
+        pd.testing.assert_frame_equal(a, b)
