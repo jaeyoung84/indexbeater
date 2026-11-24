@@ -6,7 +6,18 @@
 
 - 팀: **시그널랩 (Signal Lab)**, 4명 ([역할 분담](docs/역할분담.md))
 - 기간: 2026.11.18 ~ 2026.12.02
-- 상세 계획: `프로젝트계획서_팀원공유용.docx`
+- **먼저 읽을 문서: [프로젝트 기준](docs/프로젝트_기준.md)** (4명 공통 단일 기준)
+- 상세 계획: `프로젝트계획서_팀원공유용.pdf` (29쪽 4인판), [AI 토론 검토 결정표](docs/토론검토_결정표.md)
+
+## 데이터
+
+| 소스 | 역할 |
+|---|---|
+| KRX Open API + OpenDART | **기준 데이터.** 일별 전종목 원주가·상장주식수·시가총액(상장폐지 종목 포함)에 분할·배당·유상증자 보정을 직접 계산 → `data/krx_adjusted.parquet` (`python -m indexbeater.krx_source`) |
+| 야후(yfinance) | 교차검증 전용: `Adj Close`는 배당 포함 가격과, `Close`는 분할만 보정한 가격과 비교. 살아 있는 종목만 있어 단독 사용 금지 |
+| 네이버 금융 | 교차검증 전용: 분할+자본변동 보정 가격과 비교. 종목별 일치도로 품질 표시(`data/krx_quality_flags.csv`: 양호/의심/네이버없음) |
+
+데이터 파일은 용량이 커서 git에 올리지 않고 공유 드라이브로 나눕니다. API 키는 환경변수(`KRX_AUTH_KEY`, `OPENDART_KEY`)로만 받습니다.
 
 ## 빠른 시작 (VS Code + Anaconda)
 
@@ -41,7 +52,7 @@ indexbeater/        패키지
   optimize.py       STEP 3 최적화      features.py          STEP 5 피처·라벨
   ml/walkforward.py STEP 5 ML (purge 20일)   ml/dl.py       STEP 5 LSTM·1D-CNN
 tests/              pytest (가짜 데이터로 신호·엔진·ML을 검사)
-notebooks/          02_EDA.ipynb ~ 07_시각화.ipynb
+notebooks/          01_KRX_보정확인 · 02_외부자료비교 · 03_최종결론 (STEP 1, 읽기 전용)
 data/ results/ figures/ models/ dashboard/
 실험기록.csv        모든 시도 기록      회의기록.md
 ```
@@ -58,7 +69,7 @@ data/ results/ figures/ models/ dashboard/
 | 단계 | 기간 | 상태 |
 |---|---|---|
 | STEP 0 환경·기준 | 11/18 | ✅ 뼈대 v0.1 (폴더·설정·공통 기준 `config.py`) |
-| STEP 1 수집 | 11/18~19 | 예정 |
+| STEP 1 수집·보정·교차검증 | 11/18~19 | ✅ 완료 (KRX 기준 데이터·품질표, notebooks/01~03) |
 | STEP 2 전처리·EDA | 11/19~20 | 예정 |
 | STEP 3 신호 18개·매수 최적화 | 11/20~23 | 예정 |
 | STEP 4 규칙 조합 | 11/24~25 | 예정 |

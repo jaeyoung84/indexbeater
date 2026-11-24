@@ -1,0 +1,29 @@
+﻿항목,기준값
+지문: indexbeater/engine.py,48908465a8ab
+지문: indexbeater/signals.py,78db6954cfdf
+지문: indexbeater/exits.py,bbcbb26f4ab3
+지문: indexbeater/indicators.py,9a4a81a80982
+지문: indexbeater/data_io.py,6c8f4c9b729e
+지문: indexbeater/config.py,4fda0ea8b5a8
+지문: data/krx_adjusted.parquet,f73644072205
+데이터: 날짜 수 × 종목 수,1998 × 2353
+데이터: 거래정지일 칸,76518
+데이터: 기간 안에 끝난 종목 / 마지막 날 정지,282 / 92
+"RSI(14,30) H=10: 체결",11888
+"RSI(14,30) H=10: 중복_무시",4345
+"RSI(14,30) H=10: 미완료",32
+"RSI(14,30) H=10: 취소_갭",16
+"RSI(14,30) H=10: 매수불가",11
+"RSI(14,30) H=10: 상장폐지 정산",3
+"RSI KOSPI 평균 순수익률(0.5%) 기본, %",-0.2993
+"RSI KOSPI 평균 순수익률(0.5%) 상장폐지 최악, %",-0.3532
+"RSI KOSPI 포트폴리오 마지막 평가금액, 원","56,554,993"
+"RSI KOSDAQ 평균 순수익률(0.5%) 기본, %",-0.4239
+"RSI KOSDAQ 평균 순수익률(0.5%) 상장폐지 최악, %",-0.4239
+"RSI KOSDAQ 포트폴리오 마지막 평가금액, 원","35,765,752"
+손 계산 일치 종목 수,5 / 5
+72세트 신호 합계 (A),3765509
+72세트 신호가 0번인 세트,0
+"거래정지 A·B 차이, %",0.88
+미래 정보 테스트 통과 세트,72 / 72
+pytest 통과 / 실패,94 / 0
