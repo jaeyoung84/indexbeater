@@ -13,7 +13,15 @@ data/*
 models/*
 !models/.gitkeep
 results/*.parquet
+# 4명이 나눠 돌린 점수표 결과 (11/24 D6) — Google Drive로 모은다
+results/scorecard_parts/
+results/scorecard_all/
 *.log
 # 수업 제출용·이전 버전 문서
 프로젝트계획서_제출용.docx
 이전버전/
+
+# API keys
+.env
+*.env
+results/combo_parts/
