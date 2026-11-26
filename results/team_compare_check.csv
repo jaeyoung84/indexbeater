@@ -1,0 +1,5 @@
+﻿시장,구분,신호,비교열수,가장큰차이,다른열,통과
+KOSPI,가,disparity,49,9.540979117872439e-17,,True
+KOSDAQ,가,rsi+stochastic,49,0.0,,True
+KOSPI,나,c6_boll_rsi_oversold,49,0.0,,True
+KOSDAQ,나,c6_boll_rsi_oversold,49,0.0,,True

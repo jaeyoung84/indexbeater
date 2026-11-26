@@ -296,12 +296,20 @@ def merge(part_dir: Path, out_dir: Path = C.RESULTS) -> int:
     print(f"  ✓ 신호 {len(metas)}개, 지문 모두 같음")
     for note in environment_notes(metas):
         print(f"  주의: {note}")
+    from indexbeater import benchmark as B
+    try:                                   # 비교 지수가 없으면 아무것도 쓰기 전에 멈춘다 (D4)
+        my = B.market_yearly(B.load_market())
+    except (FileNotFoundError, ValueError) as e:
+        print(f"  ✗ 합치지 않습니다: 비교 지수 파일 문제 → python -m indexbeater benchmark 먼저 ({e})")
+        return 1
     print("2) 합치기")
     out_dir = Path(out_dir)
     for key, fname in MERGED.items():
         dfs = [pd.read_csv(Path(part_dir) / n / f"{key}.csv", encoding="utf-8-sig", dtype={"code": str})
                for n in SIGNAL_ORDER]
         df = pd.concat(dfs, ignore_index=True)
+        if key == "scorecard":
+            df = B.add_excess(df, my)      # 포트 연수익 − 같은 시장 비교 지수 연수익 (11/25 팀장 결정)
         df.to_csv(out_dir / fname, index=False, encoding="utf-8-sig")
         print(f"  {out_dir / fname}: {len(df):,}줄")
     oos = pd.concat([pd.read_parquet(Path(part_dir) / n / "oos_trades.parquet") for n in SIGNAL_ORDER],
@@ -313,7 +321,7 @@ def merge(part_dir: Path, out_dir: Path = C.RESULTS) -> int:
                "신호별": {n: {k: m[k] for k in ("돌린사람", "git", "돌린시각", "걸린초")} for n, m in metas.items()}}
     (out_dir / "scorecard_meta.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1),
                                                  encoding="utf-8")
-    print("끝. 벤치마크 초과수익 열은 벤치마크 수집 뒤 채운다 (결정 D4).")
+    print(f"끝. 점수표에 지수 초과수익 열 {len(B.EXCESS_COLS)}개를 붙였다 (결정 D4, 비교 지수 {B.MARKET_OUT.name}).")
     return 0
 
 

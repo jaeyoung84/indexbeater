@@ -27,6 +27,10 @@
 
     python -m indexbeater benchmark --fetch-index   # KQ11 받기 → data/index_kq11.parquet (처음 한 번)
     python -m indexbeater benchmark                 # → results/benchmark_tr.csv, results/benchmark_market.csv
+    python -m indexbeater benchmark --scorecard     # 이미 만든 results/scorecard.csv 에 지수 초과수익 열만 붙인다
+
+점수표 초과수익 (11/25 팀장 결정, 기준 5.6·5.8·5.17): 포트 연수익 − 같은 시장 비교 지수 연수익 (그냥 빼기).
+optimize --merge 도 합칠 때 같은 함수(add_excess)로 붙인다. 조합 점수표도 같은 함수를 쓴다.
 """
 from __future__ import annotations
 
@@ -183,6 +187,66 @@ def build_market(end=C.DESIGN_END, allow_test: bool = False, path=RAW_DAILY, sub
     return market_series(tr, load_sub_index(sub_path, end=end, allow_test=allow_test))
 
 
+def load_market(path=MARKET_OUT) -> pd.DataFrame:
+    """저장한 시장별 비교 지수(benchmark_market.csv)를 읽는다. 2020년 이후 날짜가 들어 있으면 멈춘다."""
+    ms = pd.read_csv(path, encoding="utf-8-sig", parse_dates=["date"], float_precision="round_trip")
+    if (ms["date"] >= C.TEST_START).any():
+        raise ValueError(f"{path} 에 시험 구간 날짜가 있다 → 설계 구간 파일만 쓴다 (기준 4장)")
+    return ms
+
+
+# ---------------------------------------------------------------- 점수표에 지수 초과수익 붙이기
+# 기준 5.6·5.8·5.17 '포트폴리오 성적(연도별 지수 초과수익, 중앙값, 음수 연도 수)', D4 의 남은 일.
+# 11/25 팀장 결정: 초과수익 = 포트 연수익 − 같은 시장 비교 지수 연수익 (그냥 빼기, 기준 4장 지표 정의 IR '(전략 − 지수)' 와 같은 방식)
+#                  열은 results/scorecard.csv 에 더한다 (원래 열은 그대로).
+EXCESS_YEARS = C.WF_YEARS
+EXCESS_COLS = ([f"포트_지수수익_{y}" for y in EXCESS_YEARS] + [f"포트_초과수익_{y}" for y in EXCESS_YEARS]
+               + ["포트_초과수익_중앙값", "포트_초과음수해수", "포트_지수대신쓴해"])
+SCORECARD = C.RESULTS / "scorecard.csv"
+
+
+def add_excess(score: pd.DataFrame, my: pd.DataFrame) -> pd.DataFrame:
+    """점수표(score)에 지수 초과수익 열을 맨 뒤에 붙인다. my = market_yearly() 결과.
+
+    포트폴리오가 있는 줄(비용 0.5%, D4)만 채우고 나머지 줄은 빈칸. 이미 붙어 있으면 새로 계산해 바꾼다.
+    음수 연도 = 초과수익 < 0 인 해. 대신쓴해 = 비교 지수에 대신 쓴 지수(KQ11)가 섞인 해 (5.8 '표시한다'), 없으면 '없음'
+    (빈칸으로 두면 파일을 다시 읽을 때 '2015' 가 숫자로 읽힌다).
+    """
+    out = score.drop(columns=[c for c in EXCESS_COLS if c in score.columns]).copy()
+    port = out[[f"포트_수익_{y}" for y in EXCESS_YEARS]]
+    has = port.notna().all(axis=1)
+    if (port.notna().any(axis=1) & ~has).any():
+        raise ValueError("포트폴리오 연수익이 일부 해만 빈 줄이 있다 → 포트폴리오 결과 확인")
+    ret = my.pivot(index="market", columns="year", values="수익률")
+    src = my.pivot(index="market", columns="year", values="출처")
+    markets = out.loc[has, "시장"].unique()
+    for mk in markets:
+        if mk not in ret.index:
+            raise ValueError(f"비교 지수에 {mk} 시장이 없다")
+        miss = [y for y in EXCESS_YEARS if y not in ret.columns or pd.isna(ret.loc[mk, y])]
+        if miss:
+            raise ValueError(f"{mk} 비교 지수에 {miss} 년 수익이 없다 → benchmark_market.csv 확인")
+    for y in EXCESS_YEARS:
+        out[f"포트_지수수익_{y}"] = out["시장"].map(ret[y]).where(has)
+    for y in EXCESS_YEARS:
+        out[f"포트_초과수익_{y}"] = (out[f"포트_수익_{y}"] - out[f"포트_지수수익_{y}"]).where(has)
+    ex = out[[f"포트_초과수익_{y}" for y in EXCESS_YEARS]]
+    out["포트_초과수익_중앙값"] = ex.median(axis=1).where(has)
+    out["포트_초과음수해수"] = (ex < 0).sum(axis=1).astype("Int64").where(has)
+    sub = {mk: ",".join(str(y) for y in EXCESS_YEARS if "대신" in str(src.loc[mk, y])) or "없음" for mk in markets}
+    out["포트_지수대신쓴해"] = out["시장"].map(sub).where(has)
+    return out
+
+
+def attach_scorecard(path=SCORECARD, market_path=MARKET_OUT, overwrite: bool = False) -> str:
+    """이미 만든 점수표 파일에 초과수익 열을 붙여 다시 쓴다. 원래 열은 숫자 하나도 바뀌지 않았는지 확인한다."""
+    score = pd.read_csv(path, encoding="utf-8-sig", float_precision="round_trip")
+    new = add_excess(score, market_yearly(load_market(market_path)))
+    keep = [c for c in score.columns if c not in EXCESS_COLS]
+    pd.testing.assert_frame_equal(new[keep], score[keep])          # 원래 열은 그대로
+    return _save(new, path, overwrite)
+
+
 def _save(df: pd.DataFrame, out, overwrite: bool) -> str:
     """이미 있는 결과 파일과 내용이 같으면 그대로 두고, 다르면 --overwrite 없이는 멈춘다 (결과 덮어쓰기 금지)."""
     from pathlib import Path
@@ -202,7 +266,12 @@ def main(argv=None):
     ap.add_argument("--market-out", default=str(MARKET_OUT))
     ap.add_argument("--fetch-index", action="store_true", help=f"{SUB_SYMBOL} 를 인터넷에서 받아 {SUB_FILE.name} 에 저장")
     ap.add_argument("--overwrite", action="store_true", help="내용이 다른 결과 파일을 덮어쓴다")
+    ap.add_argument("--scorecard", nargs="?", const=str(SCORECARD), metavar="점수표",
+                    help=f"이미 만든 점수표에 지수 초과수익 열만 붙인다 (기본 {SCORECARD.name}). 비교 지수는 다시 만들지 않는다")
     a = ap.parse_args(argv)
+    if a.scorecard:
+        print(f"{attach_scorecard(a.scorecard, a.market_out, a.overwrite)}: {a.scorecard} (+ 초과수익 열 {len(EXCESS_COLS)}개)")
+        return 0
     if a.fetch_index:
         d = fetch_sub_index()
         print(f"받음: {SUB_FILE} ({len(d)}줄, {d['date'].min().date()} ~ {d['date'].max().date()})")

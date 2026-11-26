@@ -24,3 +24,4 @@ results/scorecard_all/
 # API keys
 .env
 *.env
+results/combo_parts/
